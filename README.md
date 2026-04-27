@@ -1,181 +1,99 @@
-# ShopVerse — MERN E-Commerce Application
+# EC2 Deployment Guide (MERN Stack)
 
-A simple e-commerce application built with the **MERN stack** (MongoDB, Express, React, Node.js) designed for deployment on **AWS EC2**.
+This guide documents the steps taken to deploy this MERN stack application on an AWS EC2 instance running Ubuntu. It covers everything from connecting to the instance to keeping the backend running continuously using PM2.
 
-## Features
+## Prerequisites
+* An AWS EC2 Instance running **Ubuntu 22.04 LTS or 24.04 LTS**.
+* Security Group configured to allow inbound traffic on **Port 22 (SSH)** and **Port 5000 (Custom TCP)**.
+* Your `.pem` key pair downloaded to your local machine.
 
-- 🛍️ Browse 12+ products across 4 categories
-- 🔍 Search and filter products by category
-- 🛒 Shopping cart with quantity management (persisted in localStorage)
-- 📦 Simulated checkout with order creation
-- ✅ Order confirmation page
-- 📱 Fully responsive design
-- 🌙 Modern dark theme with glassmorphism UI
+---
 
-## Tech Stack
+## Step 1: Connect to the EC2 Instance
 
-| Layer      | Technology          |
-|------------|---------------------|
-| Frontend   | React 18 + Vite     |
-| Styling    | Vanilla CSS         |
-| Backend    | Node.js + Express   |
-| Database   | MongoDB + Mongoose  |
-| HTTP       | Axios               |
+If you are using **Windows**, you must first fix the permissions of your `.pem` key file before SSH will accept it. Open PowerShell in the folder where your key is downloaded and run:
 
-## Quick Start (Local Development)
+```powershell
+# Remove default inherited permissions
+icacls.exe your-key.pem /inheritance:r
 
-### Prerequisites
+# Grant Read access only to your Windows user
+icacls.exe your-key.pem /grant:r "$($env:USERNAME):(R)"
+Once permissions are fixed, connect to your instance:
 
-- **Node.js** v18+
-- **MongoDB** running locally (`mongodb://localhost:27017`)
+Bash
+ssh -i "your-key.pem" ubuntu@<your-ec2-public-ip-or-dns>
+Step 2: Install Required Dependencies
+Important: Vite and its underlying bundlers require Node.js v20.19+ or v22+. We will install Node.js v22 to ensure the frontend builds correctly without CustomEvent or missing native binding errors.
 
-### 1. Clone & Setup
+Update the system and install Node.js v22, Git, and PM2:
 
-```bash
-cd ecommerce-app
-```
+Bash
+# 1. Update package lists
+sudo apt update && sudo apt upgrade -y
 
-### 2. Backend Setup
+# 2. Download and install Node.js v22
+curl -fsSL [https://deb.nodesource.com/setup_22.x](https://deb.nodesource.com/setup_22.x) | sudo -E bash -
+sudo apt install -y nodejs
 
-```bash
-cd backend
-npm install
-```
+# 3. Verify Node version (Should output v22.x.x)
+node -v
 
-Create a `.env` file (already included):
+# 4. Install Git
+sudo apt install -y git
 
-```env
-PORT=5000
-MONGO_URI=mongodb://localhost:27017/ecommerce
-NODE_ENV=development
-```
-
-### 3. Seed the Database
-
-```bash
-npm run seed
-```
-
-### 4. Start Backend
-
-```bash
-npm run dev
-```
-
-The API will be running at `http://localhost:5000`.
-
-### 5. Frontend Setup (new terminal)
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The app will be running at `http://localhost:5173`.
-
-## API Endpoints
-
-| Method | Endpoint             | Description                 |
-|--------|----------------------|-----------------------------|
-| GET    | /api/products        | Get all products (with optional `category` and `search` query params) |
-| GET    | /api/products/:id    | Get single product          |
-| POST   | /api/orders          | Create a new order          |
-| GET    | /api/orders          | Get all orders              |
-| GET    | /api/orders/:id      | Get order by ID             |
-| GET    | /api/health          | Health check                |
-
-## AWS EC2 Deployment Guide
-
-### 1. Launch an EC2 Instance
-
-- **AMI**: Amazon Linux 2023 or Ubuntu 22.04
-- **Instance type**: t2.micro (free tier) or t2.small
-- **Security Group**: Allow inbound on ports 22 (SSH), 80 (HTTP), 5000 (API)
-
-### 2. SSH into EC2
-
-```bash
-ssh -i your-key.pem ec2-user@<your-ec2-public-ip>
-```
-
-### 3. Install Dependencies
-
-```bash
-# Node.js
-curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-sudo yum install -y nodejs   # Amazon Linux
-# OR
-sudo apt install -y nodejs npm   # Ubuntu
-
-# MongoDB
-# Follow MongoDB's official docs for your OS
-# Or use MongoDB Atlas (cloud) and update MONGO_URI
-```
-
-### 4. Clone and Setup
-
-```bash
-git clone <your-repo-url>
-cd ecommerce-app
-
-# Backend
-cd backend
-npm install
-npm run seed
-
-# Frontend
-cd ../frontend
-npm install
-npm run build
-```
-
-### 5. Serve Frontend from Backend
-
-Copy the frontend build output to be served by Express:
-
-```bash
-cp -r frontend/dist backend/public
-```
-
-Add static file serving to `backend/server.js` (already compatible).
-
-### 6. Run with PM2
-
-```bash
+# 5. Install PM2 globally (Process Manager for Node.js)
 sudo npm install -g pm2
-cd backend
-pm2 start server.js --name ecommerce
+Step 3: Clone the Repository
+Bring the project code onto the EC2 instance:
+
+Bash
+git clone <your-github-repo-url>
+cd <your-repository-folder-name>
+Step 4: Build the Frontend
+Because the backend is configured to serve the static frontend files in production, we need to build the React/Vite app first.
+
+Bash
+# Navigate to the frontend directory
+cd frontend
+
+# Clean cache and install dependencies fresh (prevents OS binary conflicts)
+npm cache clean --force
+npm install
+
+# Build the project (generates the /dist folder)
+npm run build
+Step 5: Configure the Backend
+Navigate to the backend directory and set up the environment variables:
+
+Bash
+# Navigate back to the root, then into the backend
+cd ../backend
+
+# Install backend dependencies
+npm install
+
+# Create the environment variables file
+nano .env
+Paste your configuration into the .env file:
+
+Code snippet
+NODE_ENV=production
+PORT=5000
+MONGO_URI=your_mongodb_connection_string
+(Save and exit by pressing Ctrl+O, Enter, then Ctrl+X)
+
+Step 6: Start the Server with PM2
+To keep the Node.js application running in the background even after you close the SSH terminal, use PM2:
+
+Bash
+# Start the server
+pm2 start server.js --name "ecommerce-app"
+
+# Configure PM2 to auto-restart the app if the EC2 instance reboots
+pm2 startup ubuntu
+(Run the specific command PM2 outputs to your console, it will look something like sudo env PATH=$PATH:/usr/bin...)
+
+Bash
+# Save the current PM2 process list
 pm2 save
-pm2 startup
-```
-
-Your app will be accessible at `http://<your-ec2-public-ip>:5000`.
-
-## Project Structure
-
-```
-ecommerce-app/
-├── backend/
-│   ├── config/db.js
-│   ├── models/Product.js, Order.js
-│   ├── controllers/productController.js, orderController.js
-│   ├── routes/productRoutes.js, orderRoutes.js
-│   ├── seeder.js
-│   ├── server.js
-│   └── .env
-├── frontend/
-│   ├── src/
-│   │   ├── api/index.js
-│   │   ├── components/Navbar, ProductCard, Footer
-│   │   ├── context/CartContext.jsx
-│   │   ├── pages/HomePage, ProductPage, CartPage, OrderSuccessPage
-│   │   ├── App.jsx
-│   │   └── index.css (design system)
-│   └── vite.config.js
-└── README.md
-```
-
-## License
-
-MIT
